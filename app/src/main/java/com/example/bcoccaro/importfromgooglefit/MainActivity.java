@@ -1,18 +1,19 @@
 package com.example.bcoccaro.importfromgooglefit;
 
-import android.content.Context;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Intent;
 import android.content.IntentSender;
 import android.content.SharedPreferences;
 import android.os.AsyncTask;
 import android.support.annotation.NonNull;
+import android.support.v4.app.NotificationCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
 import android.widget.TextView;
 
 import com.google.android.gms.common.ConnectionResult;
-import com.google.android.gms.common.GooglePlayServicesUtil;
 import com.google.android.gms.common.Scopes;
 import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.common.api.PendingResult;
@@ -35,13 +36,51 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        if (savedInstanceState != null) {
+        /*if (savedInstanceState != null) {
             authInProgress = savedInstanceState.getBoolean(AUTH_PENDING);
-        }
+        }*/
         buildFitnessClient();
     }
 
-    private void buildFitnessClient() {
+    @Override
+    protected void onStart() {
+        super.onStart();
+        // Connect to the Fitness API
+        Log.i(TAG, "Connecting...");
+        mClient.connect();
+
+        VerifyDataTask task = new VerifyDataTask();
+        task.doInBackground();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (mClient.isConnected()) {
+            mClient.disconnect();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        sendNotification();
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == REQUEST_OAUTH) {
+            authInProgress = false;
+            if (resultCode == RESULT_OK) {
+                // Make sure the app is not already connected or attempting to connect
+                if (!mClient.isConnecting() && !mClient.isConnected()) {
+                    mClient.connect();
+                }
+            }
+        }
+    }
+
+    public void buildFitnessClient() {
         // Create the Google API Client
         mClient = new GoogleApiClient.Builder(this)
                 .addApi(Fitness.SENSORS_API)
@@ -79,59 +118,21 @@ public class MainActivity extends AppCompatActivity {
                                 Log.i(TAG, "Connection failed. Cause: " + result.toString());
                                 if (!result.hasResolution()) {
                                     // Show the localized error dialog
-                                    GooglePlayServicesUtil.getErrorDialog(result.getErrorCode(),
-                                            MainActivity.this, 0).show();
                                     return;
                                 }
                                 // The failure has a resolution. Resolve it.
                                 // Called typically when the app is not yet authorized, and an
                                 // authorization dialog is displayed to the user.
-                                if (!authInProgress) {
-                                    try {
-                                        Log.i(TAG, "Attempting to resolve failed connection");
-                                        authInProgress = true;
-                                        result.startResolutionForResult(MainActivity.this,
-                                                REQUEST_OAUTH);
-                                    } catch (IntentSender.SendIntentException e) {
-                                        Log.e(TAG, "Exception while starting resolution activity", e);
-                                    }
+                                try {
+                                    Log.i(TAG, "Attempting to resolve failed connection");
+                                    result.startResolutionForResult(MainActivity.this, REQUEST_OAUTH);
+                                } catch (IntentSender.SendIntentException e) {
+                                    Log.e(TAG, "Exception while starting resolution activity", e);
                                 }
                             }
                         }
                 )
                 .build();
-    }
-
-    @Override
-    protected void onStart() {
-        super.onStart();
-        // Connect to the Fitness API
-        Log.i(TAG, "Connecting...");
-        mClient.connect();
-
-        VerifyDataTask task = new VerifyDataTask();
-        task.doInBackground();
-    }
-
-    @Override
-    protected void onStop() {
-        super.onStop();
-        if (mClient.isConnected()) {
-            mClient.disconnect();
-        }
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        if (requestCode == REQUEST_OAUTH) {
-            authInProgress = false;
-            if (resultCode == RESULT_OK) {
-                // Make sure the app is not already connected or attempting to connect
-                if (!mClient.isConnecting() && !mClient.isConnected()) {
-                    mClient.connect();
-                }
-            }
-        }
     }
 
     @Override
@@ -152,10 +153,9 @@ public class MainActivity extends AppCompatActivity {
                 public void onResult(@NonNull DailyTotalResult dailyTotalResult) {
                     int steps = dailyTotalResult.getTotal().getDataPoints().get(0).getValue(Field.FIELD_STEPS).asInt();
 
-                    SharedPreferences mPref = getApplicationContext().getSharedPreferences("Steps", MODE_PRIVATE);
+                    SharedPreferences mPref = getSharedPreferences("Steps", MODE_PRIVATE);
                     mPref.edit().putString("step", String.valueOf(steps)).apply();
-                    Log.e("Sharedp", mPref.getString("step", "15"));
-                    mPref = getSharedPreferences("Steps", MODE_PRIVATE);
+                    Log.e("Sharedp", mPref.getString("step", "0"));
                     TextView text = findViewById(R.id.textView1);
                     text.setText(String.valueOf(steps));
 
@@ -165,5 +165,29 @@ public class MainActivity extends AppCompatActivity {
             return null;
         }
     }
+
+    //Creo la notifica
+    public void sendNotification() {
+
+        NotificationCompat.Builder notify_builder = new NotificationCompat.Builder(this);
+
+        Intent intent = new Intent(this, MainActivity.class);
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, intent, 0);
+
+        VerifyDataTask task1 = new VerifyDataTask();
+        task1.doInBackground();
+        SharedPreferences mPref = getSharedPreferences("Steps", MODE_PRIVATE);
+
+        notify_builder.setContentIntent(pendingIntent);
+
+        notify_builder.setSmallIcon(R.mipmap.ic_launcher);
+        notify_builder.setContentTitle("Passi Totali");
+        notify_builder.setContentText(mPref.getString("Steps", "0"));
+
+        NotificationManager notification = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+
+        notification.notify(002, notify_builder.build());
+    }
+
 }
 
