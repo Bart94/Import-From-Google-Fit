@@ -24,12 +24,16 @@ import com.google.android.gms.fitness.data.DataType;
 import com.google.android.gms.fitness.data.Field;
 import com.google.android.gms.fitness.result.DailyTotalResult;
 
-public class MainActivity extends AppCompatActivity {
+import java.util.Timer;
+import java.util.TimerTask;
+
+public class MainActivity extends AppCompatActivity{
     private static final int REQUEST_OAUTH = 1;
     private static final String TAG = "Tag";
     private static final String AUTH_PENDING = "auth_state_pending";
     private boolean authInProgress = false;
     private GoogleApiClient mClient = null;
+    int j=0;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -49,22 +53,20 @@ public class MainActivity extends AppCompatActivity {
         Log.i(TAG, "Connecting...");
         mClient.connect();
 
-        VerifyDataTask task = new VerifyDataTask();
-        task.doInBackground();
-    }
-
-    @Override
-    protected void onStop() {
-        super.onStop();
-        if (mClient.isConnected()) {
-            mClient.disconnect();
-        }
+        Timer timer = new Timer();
+        timer.schedule(new MyTask(0), 0,10 * 2000);
+        //VerifyDataTask task = new VerifyDataTask();
+        //task.doInBackground();
+        //MyTask myTask = new MyTask();
+        //myTask.run();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        sendNotification();
+        Log.e("Status", "onPause");
+        Timer timer = new Timer();
+        timer.schedule(new MyTask(1), 0,10* 2000);
     }
 
     @Override
@@ -141,7 +143,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private class VerifyDataTask extends AsyncTask<Void, Void, Void> {
-        TextView text = findViewById(R.id.textView1);
         protected Void doInBackground(Void... params) {
 
             long total = 0;
@@ -155,14 +156,31 @@ public class MainActivity extends AppCompatActivity {
 
                     SharedPreferences mPref = getSharedPreferences("Steps", MODE_PRIVATE);
                     mPref.edit().putString("step", String.valueOf(steps)).apply();
-                    Log.e("Sharedp", mPref.getString("step", "0"));
                     TextView text = findViewById(R.id.textView1);
                     text.setText(String.valueOf(steps));
-
-                    Log.e("Totale stesps: ", mPref.getString("step", " 12 "));
                 }
             });
             return null;
+        }
+    }
+
+    private class MyTask extends TimerTask {
+        int i;
+
+        private MyTask(int value){
+            this.i = value;
+        }
+
+        public void run() {
+            if(i==0) {
+                new VerifyDataTask().execute();
+                j++;
+                Log.e("Counter", String.valueOf(j));
+            }else{
+                j++;
+                Log.e("Counter++", String.valueOf(j));
+                sendNotification();
+            }
         }
     }
 
@@ -174,20 +192,29 @@ public class MainActivity extends AppCompatActivity {
         Intent intent = new Intent(this, MainActivity.class);
         PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, intent, 0);
 
-        VerifyDataTask task1 = new VerifyDataTask();
-        task1.doInBackground();
+        new VerifyDataTask().execute();
+
         SharedPreferences mPref = getSharedPreferences("Steps", MODE_PRIVATE);
+        String steps = mPref.getString("step", " 12 ");
 
         notify_builder.setContentIntent(pendingIntent);
 
         notify_builder.setSmallIcon(R.mipmap.ic_launcher);
         notify_builder.setContentTitle("Passi Totali");
-        notify_builder.setContentText(mPref.getString("Steps", "0"));
+        notify_builder.setContentText(steps);
 
         NotificationManager notification = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
 
-        notification.notify(002, notify_builder.build());
+        notification.notify(001, notify_builder.build());
     }
 
+    @Override
+    protected void onStop() {
+        super.onStop();
+        Log.e("Status", "onDestroy");
+        if (mClient.isConnected()) {
+            mClient.disconnect();
+        }
+    }
 }
 
