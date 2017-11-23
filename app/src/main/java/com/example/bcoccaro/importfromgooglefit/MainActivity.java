@@ -19,21 +19,31 @@ import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.common.api.PendingResult;
 import com.google.android.gms.common.api.ResultCallback;
 import com.google.android.gms.common.api.Scope;
+import com.google.android.gms.common.api.Status;
 import com.google.android.gms.fitness.Fitness;
+import com.google.android.gms.fitness.data.DataPoint;
+import com.google.android.gms.fitness.data.DataSet;
+import com.google.android.gms.fitness.data.DataSource;
 import com.google.android.gms.fitness.data.DataType;
 import com.google.android.gms.fitness.data.Field;
+import com.google.android.gms.fitness.data.Value;
+import com.google.android.gms.fitness.request.DataReadRequest;
+import com.google.android.gms.fitness.request.DataSourcesRequest;
+import com.google.android.gms.fitness.request.OnDataPointListener;
+import com.google.android.gms.fitness.request.SensorRequest;
 import com.google.android.gms.fitness.result.DailyTotalResult;
+import com.google.android.gms.fitness.result.DataReadResult;
+import com.google.android.gms.fitness.result.DataSourcesResult;
 
-import java.util.Timer;
-import java.util.TimerTask;
+import java.util.Calendar;
+import java.util.concurrent.TimeUnit;
 
-public class MainActivity extends AppCompatActivity{
+public class MainActivity extends AppCompatActivity {
     private static final int REQUEST_OAUTH = 1;
     private static final String TAG = "Tag";
     private static final String AUTH_PENDING = "auth_state_pending";
     private boolean authInProgress = false;
     private GoogleApiClient mClient = null;
-    int j=0;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -53,20 +63,35 @@ public class MainActivity extends AppCompatActivity{
         Log.i(TAG, "Connecting...");
         mClient.connect();
 
-        Timer timer = new Timer();
-        timer.schedule(new MyTask(0), 0,10 * 2000);
-        //VerifyDataTask task = new VerifyDataTask();
-        //task.doInBackground();
-        //MyTask myTask = new MyTask();
-        //myTask.run();
+        getStep();
+
+        SharedPreferences mPref = getSharedPreferences("Steps", MODE_PRIVATE);
+        TextView text = findViewById(R.id.textView1);
+        text.setText(mPref.getString("step", "0"));
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (mClient.isConnected()) {
+            mClient.disconnect();
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        mClient.connect();
+
+        SharedPreferences mPref = getSharedPreferences("Steps", MODE_PRIVATE);
+        TextView text = findViewById(R.id.textView1);
+        text.setText(mPref.getString("step", "0"));
+
+        super.onResume();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        Log.e("Status", "onPause");
-        Timer timer = new Timer();
-        timer.schedule(new MyTask(1), 0,10* 2000);
     }
 
     @Override
@@ -142,7 +167,70 @@ public class MainActivity extends AppCompatActivity{
         super.onSaveInstanceState(outState);
     }
 
+    public void getStep(){
+            // [START find_data_sources]
+            // Note: Fitness.SensorsApi.findDataSources() requires the ACCESS_FINE_LOCATION permission.
+            Fitness.SensorsApi.findDataSources(mClient, new DataSourcesRequest.Builder()
+                    // At least one datatype must be specified.
+                    .setDataTypes(DataType.TYPE_STEP_COUNT_DELTA)
+                    // Can specify whether data type is raw or derived.
+                    .build())
+                    .setResultCallback(new ResultCallback<DataSourcesResult>() {
+                        @Override
+                        public void onResult(DataSourcesResult dataSourcesResult) {
+                            Log.i(TAG, "Result: " + dataSourcesResult.getStatus().toString());
+                            for (DataSource dataSource : dataSourcesResult.getDataSources()) {
+                                Log.i(TAG, "Data source found: " + dataSource.toString());
+                                Log.i(TAG, "Data Source type: " + dataSource.getDataType().getName());
+
+                                //Let's register a listener to receive Activity data!
+                                if (dataSource.getDataType().equals(DataType.TYPE_STEP_COUNT_DELTA)) {
+                                    Log.i(TAG, "Data source for LOCATION_SAMPLE found!  Registering.");
+                                    registerFitnessDataListener(dataSource, DataType.TYPE_STEP_COUNT_DELTA);
+                                }
+                            }
+                        }
+                    });
+            // [END find_data_sources]
+    }
+
+    private void registerFitnessDataListener(DataSource dataSource, DataType dataType) {
+        // [START register_data_listener]
+       OnDataPointListener mListener = new OnDataPointListener() {
+            @Override
+            public void onDataPoint(DataPoint dataPoint) {
+                for (Field field : dataPoint.getDataType().getFields()) {
+                    Value val = dataPoint.getValue(field);
+
+                    Log.i(TAG, "Detected DataPoint field: " + field.getName());
+                    Log.i(TAG, "Detected DataPoint value: " + val);
+                }
+            }
+        };
+
+        Fitness.SensorsApi.add(
+                mClient,
+                new SensorRequest.Builder()
+                        .setDataSource(dataSource) // Optional but recommended for custom data sets.
+                        .setDataType(dataType) // Can't be omitted.
+                        .setSamplingRate(1, TimeUnit.SECONDS)
+                        .build(),
+                mListener)
+                .setResultCallback(new ResultCallback<Status>() {
+                    @Override
+                    public void onResult(Status status) {
+                        if (status.isSuccess()) {
+                            Log.i(TAG, "Listener registered!");
+                        } else {
+                            Log.i(TAG, "Listener not registered.");
+                        }
+                    }
+                });
+        // [END register_data_listener]
+    }
+
     private class VerifyDataTask extends AsyncTask<Void, Void, Void> {
+        TextView text = findViewById(R.id.textView1);
         protected Void doInBackground(Void... params) {
 
             long total = 0;
@@ -156,31 +244,11 @@ public class MainActivity extends AppCompatActivity{
 
                     SharedPreferences mPref = getSharedPreferences("Steps", MODE_PRIVATE);
                     mPref.edit().putString("step", String.valueOf(steps)).apply();
-                    TextView text = findViewById(R.id.textView1);
-                    text.setText(String.valueOf(steps));
+
+                    Log.e("Totale stesps: ", mPref.getString("step", " 12 "));
                 }
             });
             return null;
-        }
-    }
-
-    private class MyTask extends TimerTask {
-        int i;
-
-        private MyTask(int value){
-            this.i = value;
-        }
-
-        public void run() {
-            if(i==0) {
-                new VerifyDataTask().execute();
-                j++;
-                Log.e("Counter", String.valueOf(j));
-            }else{
-                j++;
-                Log.e("Counter++", String.valueOf(j));
-                sendNotification();
-            }
         }
     }
 
@@ -192,29 +260,21 @@ public class MainActivity extends AppCompatActivity{
         Intent intent = new Intent(this, MainActivity.class);
         PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, intent, 0);
 
-        new VerifyDataTask().execute();
+        VerifyDataTask task1 = new VerifyDataTask();
+        task1.doInBackground();
 
         SharedPreferences mPref = getSharedPreferences("Steps", MODE_PRIVATE);
-        String steps = mPref.getString("step", " 12 ");
 
         notify_builder.setContentIntent(pendingIntent);
 
         notify_builder.setSmallIcon(R.mipmap.ic_launcher);
         notify_builder.setContentTitle("Passi Totali");
-        notify_builder.setContentText(steps);
+        notify_builder.setContentText(mPref.getString("step", "0"));
 
         NotificationManager notification = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
 
-        notification.notify(001, notify_builder.build());
+        notification.notify(002, notify_builder.build());
     }
 
-    @Override
-    protected void onStop() {
-        super.onStop();
-        Log.e("Status", "onDestroy");
-        if (mClient.isConnected()) {
-            mClient.disconnect();
-        }
-    }
 }
 
